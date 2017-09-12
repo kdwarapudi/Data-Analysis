@@ -1,4 +1,5 @@
-Sample Project
-----------------
+Hello fellow Data Enthusiasts,
 
-This is a sample project to demonstrate git.  All files except this one are blank.
+I am Kousalya Dwarapudi. And this is my attempt to enter and explore the world of data. Most of the projects here are a culmination of various projects I have done during my Nanodegree program at Udacity and some during my Healthcare Analytics coursework at UIC.
+
+
