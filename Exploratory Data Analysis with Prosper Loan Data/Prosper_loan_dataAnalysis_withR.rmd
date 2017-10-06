@@ -1,0 +1,468 @@
+Prosper Loan Data 
+========================================================
+
+```{r}
+knitr::opts_chunk$set(fig.width=15, fig.height=10) 
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(dplyr)
+#install.packages('lubridate')
+library(lubridate)
+#install.packages('GGally')
+library(GGally)
+```
+
+#Loan Data from Prosper
+Prosper Marketplace, Inc. is a San Francisco, California-based company in the peer-to-peer lending industry.In this project, I use their dataset to explore their data which contains 113,937 loans with 81 variables. 
+
+
+```{r echo=FALSE, Load_the_Data}
+loanSET <- read.csv("prosperLoanData.csv", header = TRUE)
+
+```
+
+Since the dataset is too large and has around 81 variables,I'm subsetting my dataset to consider only those variables which I think will give me a good detailed explanation of my borrowers!
+
+```{r echo=FALSE}
+
+loan <- loanSET[,c("ListingNumber","CreditGrade","ListingCreationDate","Term","LoanStatus","ClosedDate","BorrowerRate","CreditScoreRangeLower","ProsperRating..Alpha.","CreditScoreRangeUpper","LenderYield","DebtToIncomeRatio","ProsperScore","ListingCategory..numeric.","BorrowerState","Occupation","IncomeRange","TotalProsperLoans","CurrentDelinquencies","DelinquenciesLast7Years","AmountDelinquent","LoanOriginalAmount","LoanOriginationQuarter","LoanOriginationDate")]
+
+str(loan)
+
+```
+
+##Cleaning the data variables
+
+After eye-balling the dataset, I saw that there were some variables which required reverse coding, numeric-to-factor conversion and other slight changes.
+
+
+1. Combining the Creditscore lower and upper range to get a single values for the Credit Score given by the Consumer Credit rating agency. I decided to find the mean of these two columns and assign it as the Credit Score of respective listing.
+
+```{r echo=FALSE}
+
+loan <- loan %>% mutate(CreditScore = (CreditScoreRangeUpper + CreditScoreRangeLower)/2)
+
+
+```
+```{r echo=FALSE}
+loan$newStatus <- loan$LoanStatus
+levels(loan$newStatus)[levels(loan$newStatus) %in% c("Defaulted","Chargedoff")] <- "Defaulted"
+levels(loan$newStatus)[levels(loan$newStatus) %in% c("Past Due (>120 days)","Past Due (1-15 days)","Past Due (16-30 days)","Past Due (31-60 days)","Past Due (61-90 days)","Past Due (91-120 days)")] <- "Late Payments"
+
+levels(loan$newStatus)[levels(loan$newStatus) %in% c("FinalPaymentInProgress","Completed")] <- "Completed"
+levels(loan$newStatus)[levels(loan$newStatus)%in% c("Cancelled")] <- NA
+table(loan$newStatus)
+
+```
+
+2. The listing category variable is of type numeric. COnverting this into a category based on the numeric coding given in the excel :
+
+0 - Not Available, 1 - Debt Consolidation, 2 - Home Improvement, 3 - Business, 4 - Personal Loan, 5 - Student Use, 6 - Auto, 7- Other, 8 - Baby&Adoption, 9 - Boat, 10 - Cosmetic Procedure, 11 - Engagement Ring, 12 - Green Loans, 13 - Household Expenses, 14 - Large Purchases, 15 - Medical/Dental, 16 - Motorcycle, 17 - RV, 18 - Taxes, 19 - Vacation, 20 - Wedding Loans
+
+```{r echo=FALSE}
+labels <- c("Debt Consolidation", "Home Improvement", "Business", "Personal Loan", "Student Use", "Auto", "Baby & Adoption", "Boat", "Cosmetic Procedure", "Engagement Ring", "Green Loans", "Household Expenses", "Large Purchases", "Medical/Dental", "Motorcycle", "RV", "Taxes", "Vacation", "Wedding", "Other", "Not Applicable")
+
+loan$ListingCategory <- factor(loan$ListingCategory..numeric.,
+                                          levels = c(1:6, 8:20, 7, 0),
+                                          labels = labels)
+
+table(loan$ListingCategory)
+```
+3. Lets extract the year from the Loan Origination Date and naming it Origination Year.
+
+```{r echo=FALSE}
+
+# Convert dates to date class using lubridate's ymd_hms() function
+
+x <- as.character(loan$LoanOriginationDate)
+loan$LoanOriginationDate <- ymd_hms(x)
+
+loan$OriginationYear <- year(loan$LoanOriginationDate)
+
+```
+
+4.From the variable dictionary, the two columns- CreditGrade & ProsperRating (Alpha) give us thhe credit rating for loans pre-2009 and post 2009 respectively.
+
+Joining these two columns into a single column called CreditRating.
+
+```{r echo=FALSE}
+category <- rev(c("HR", "E", "D", "C", "B", "A", "AA"))
+
+loan <- loan %>% mutate(CreditRating = ifelse(ProsperRating..Alpha. %in% category, as.character(ProsperRating..Alpha.), ifelse(CreditGrade %in% category, as.character(CreditGrade), NA)))
+
+loan$CreditRating <- ordered(loan$CreditRating, labels = category)
+```
+
+
+
+# Univariate Plots Section
+
+# Univariate Plots
+
+## 1. Loan Origination Amount 
+Since our dataset is about the loans, lets see how much loan amount is usually requested.
+
+Plotting the histogram for LoanOriginationAmount.
+
+```{r echo=FALSE}
+
+
+qplot(x=LoanOriginalAmount, data = loan, binwidth=1000, color=I('#CC6699'), fill=I('#CC6699'))+
+  scale_x_continuous(breaks=seq(0,35000,4000))
+
+```
+
+From the above plot we see that the loan amounts 4000, 10000, 15000 and 20000 have count value more than 10000. This means that the bulk of loaners from Proper usually borrow smaller amounts. Lets, see why? Is it cause of the high Interest rate or based on the borrower characteristics?
+
+
+## 2. Term
+
+Lets see how long are these loans usually taken for. It's expressed in months in the dataset, converting months to year by dividing the term value by 12.
+
+```{r echo=FALSE }
+
+qplot(x=Term, data=loan, binwidth=12, color=I('#990066'), fill=I('#990066'))+scale_x_continuous(breaks = seq(0,60,12))
+```
+
+
+From the above plot, we can clearly say that most of the loans are lent on 36 months (= 3 years) or 60 months (= 5 years) basis. Very few are taken on 12 month basis
+
+## 3 . Loan Status
+
+Lets see what's the status of most loans?
+
+```{r echo=FALSE }
+
+qplot(x=loan$LoanStatus, data=loan, color=I('#FF0000'), fill=I('#FF0000'))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+```
+
+So we see the certain loans have been defaulted and there are a lot of bands which show that they are quite some late payments.  
+
+```{r echo=FALSE}
+p1 <- nrow(loan[loan$LoanStatus=='Defaulted',])/nrow(loan)
+p1*100
+```
+
+```{r echo=FALSE}
+#LATE PAYMENTS
+
+p2 <- subset(loan, loan$LoanStatus=='Past Due (>120 days)' | loan$LoanStatus =='Past Due (1-15 days)' | loan$LoanStatus == 'Past Due (16-30 days)' | loan$LoanStatus == 'Past Due (31-60 days)' | loan$LoanStatus == 'Past Due (61-90 days)' | loan$LoanStatus =='Past Due (91-120 days)')
+
+pcent <- nrow(p2)/nrow(loan)
+pcent*100
+```
+
+The exact percentage of cases that are defaulted is 4.401% and number of late payments are 1.81%
+
+## 4 . Listing Category
+
+Let's explore what is the major category under which Prosper loans are issued
+
+```{r echo=FALSE }
+qplot(x=ListingCategory, data=loan, color=I('#660033'), fill=I('#660033'))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+From above plot, its clear that most of the loans are issued under Debt Consolidation and the rest ambigious ones (Not Applicable) comes next but is much below the 20,000 count mark.
+
+
+
+
+## Borrower's Characteristics
+
+Let's explore the data to understand more about our borrowers.
+
+### 1. Borrower's State
+
+```{r echo=FALSE}
+
+qplot(x=loan$BorrowerState, data = loan, color=I('#990000'), fill=I('#990000'))+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+Looks like most of the borrowers are from Arizona State!
+
+### 2. Rate at which the borrowers are given the loan:
+
+```{r echo=FALSE}
+
+qplot(x=loan$BorrowerRate, data = loan,color=I('#CC6600'), fill=I('#CC6600'))+scale_x_continuous(breaks = seq(0,0.5,0.05))
+
+```
+
+Looking at the above plot, it looks like most of the loans are borrowed at the rate of 0.15 % -0.17%
+The next largest bin is 0.1% followed by 0.2%
+And looking at the whole graph, it looks normally distributed!
+
+
+### 3. Income Range of the borrowers:
+
+```{r echo=FALSE}
+
+qplot(x=loan$IncomeRange, data=loan,color=I('#3399FF'), fill=I('#3399FF'))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+Looks like most of the borrowers belong to low to mid income range. The largest bin has users of income range $25K-50K
+followed by $50k-75k
+
+### 4. Credit Score:
+
+```{r echo=FALSE}
+#Looks like we have an outlier where the credit score is 9.5
+#Generally credit score ranges from 400 to 850. Thus, using this i'll try to scale the x-axis of our credit scores.
+
+qplot(x=loan$CreditScore, data = loan, binwidth=100, color=I('#00FF99'), fill=I('#00FF99'))+
+  scale_x_continuous(limits = c(400,800), breaks = seq(400,900,50))
+
+
+
+```
+
+So from the above plot its clear that most of the borrowers have a credit score of 650-750.
+
+##Univariate Analysis
+
+After creating new variables from the existing dataset, my final dataset of 26 variables consists of 8 factor variables and rest integer variables.I have chosen the following variables to explore the characteristics of Prosper borrowers and the company as such. The most interesting plot which i found from my univariate analysis, is the time series plot where we saw how many loans were issued per quarter since 2006 to 2014-Q1.
+The second most interesting factor about the borrowers of Prosper is that the companies borrowing are all mid-level companies issueing loans at the rate of 0.15-0.17% mainly for Debt Consolidation purposes. Another interesting characteristics of these creditors is that they all have an average credit score between 650-750 and are from the state of Arizona.
+
+
+# Bivariate Plots Section
+
+Lets explore and see if there is any relation between the Credit Rating and Credit Score. Just to re-iterate, Credit Rating is a variable which i created by clubbing the columns - Credit Grade and ProperRating..Alpha
+  
+
+```{r echo=FALSE}
+
+
+ggplot(aes(x = CreditRating, y = CreditScore,fill = I("#66CC99"), color = I("#66CC99")),data = loan) +
+  geom_boxplot(lwd = 0.75, outlier.color = I("#FBB448"), outlier.shape = 1) +
+  scale_x_discrete(limits = c("HR", "E", "D", "C", "B", "A", "AA")) +
+  coord_cartesian(ylim = c(600, 950))
+
+```
+
+The  Credit Rating assigned at the time of the listing was created: 1 - HR, 2 - E, 3 - D, 4 - C, 5 - B, 6 - A, 7 - AA.
+So, looking at the plot, its clear that as the rating given my prosper is directly propostional to the credit score of the user. But though rating 'AA' has higher rating 'A' but the median score of AA looks lower than A. Let's see what summary statistics tell us about this:
+```{r}
+by(loan$CreditScore, loan$CreditRating, summary)
+```
+
+From the summary statistics, we see that the median value for rating 'AA' is lesser than 'A' by 50 point and even the Mean value. Reading more about how Prosper's properitiary system, it looks like they grade loaners AA not just by their credit history but also internal scoring system called Prosper Score and only those are given AA if they fall under low risk category and get lower interest rate (5.48%)
+
+Now exploring Amount borrowed over time by Term
+
+```{r echo=FALSE, Bivariate_Plots}
+
+loan$Term.f <- as.factor(loan$Term)
+
+ggplot(aes(x=LoanOriginationDate,y=LoanOriginalAmount, color = Term.f, fill=Term.f), data = loan) +
+  geom_point(alpha = 1/25, position = 'jitter') +
+  ggtitle('Amount Borrowed Over Time') +
+  xlab('Year') +
+  ylab('Amount Borrowed ($USD)')
+
+```
+
+Though the plot isn't very clear, but it looks like most of the large amount of money has been borrowed for long term usually for 60 months which is a 5 year period.
+
+Lets plot Listing category and the loan Amount
+```{r echo=FALSE}
+ggplot(aes(x=ListingCategory,y=LoanOriginalAmount), data = loan) +
+  geom_boxplot() +
+  ggtitle('Amount Borrowed Over Time under various Categories') +
+  xlab('Listing Categories') +
+  ylab('Amount Borrowed ($USD)')+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Looks like highest loan amounts are borrowed under 'Debt Consolidation' and 'Baby&Adoption' category.Lets look at what rate at which these loans are issued
+
+
+```{r}
+
+ggplot(aes(x=ListingCategory,y=BorrowerRate), data = loan) +
+  geom_boxplot() +
+  ggtitle('Rate of Interest for various Categories') +
+  xlab('Listing Categories') +
+  ylab('Borrower Rate')+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+Though the amount borrowed under Debt Consolidation and Baby Adoption is high but the borrower rate is pretty low. The highest rate is for Cosmetic Procedures and Household expenses.
+
+```{r echo=FALSE}
+ggplot(aes(x=IncomeRange, color=CreditRating, fill=CreditRating), data=loan)+geom_bar()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+Looking at Income range vs. Occupation
+
+```{r echo=FALSE, fig.width=15, fig.height=10}
+
+ggplot(aes(x=Occupation, color=CreditRating, fill=CreditRating), data=loan)+geom_bar()+theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 15))+theme(axis.text.y = element_text(size = 15))
+
+```
+Looks like Nurses have taken a good share of loans and they seem to fall under the less risky category. But at the same time, they seem to hold good share every credit rating grade.
+
+Now, lets see how the loan status varies w.r.t Loan Origination Amount
+
+
+```{r}
+ggplot(aes(x=loan$newStatus, y=loan$LoanOriginalAmount,fill=loan$newStatus), data = loan )+geom_boxplot(lwd = 0.75, outlier.color = I("#FBB448"), outlier.shape = 1) + scale_x_discrete(limits = c("Defaulted", "Completed", "Current", "Late Payments")) 
+```
+# Bivariate Analysis
+
+After looking at all the plots in the Bivariate analysis, it looks like the Nurses are more in number of loans issued. They seem equally distributed in all the ratings provided by Prosper.This relates to why the lower income range [25000-49000] have issued the most number of loans.
+The most amount of loans where taken under the category of Debt COnsolidation and Baby & Adoption but the rate of interest was highest for the categories Household Expenses and Cosmetic Procedures.
+
+The last plot where I explore the loan amount with the loan status. I derived the column column newStatus from the original column Loan Status, where I grouped statuses - Charged Off and Defaulted into Defaulted, Final Payment in Progress into Completed, all the late payments with various day deltas into Late Payments category.I removed the cancelled category and converetd them into NA.
+
+The total dstribution for this new column is as follows
+```{r echo=FALSE}
+table(loan$newStatus)
+```
+
+
+# Multivariate Plots Section
+
+##Correlation Matrix
+
+
+```{r echo=FALSE }
+ggcorr(loan, label = TRUE, label_size = 3,hjust = 0.8, size = 2.5, color = "black", layout.exp = 2)
+```
+
+The correlation matrix revealed some interesting facts. The variables with correlation of 1 between variables Lender Yield and Borrower Rate, Creation Year and Origination Year, CreitScoreRangeUpper and CreditScoreRangeLower is all because they are more or less the same variables.
+The highest correlation in this matrix, is between the Current Delinquencies and Delinquencies Last 7 years which is 0.4 which means that those accounts are still open. One more surprising thing I noticed was that the BorrowerRate and CreditScore have a negative correlation of 0.5 and ProsperScore w.r.t LenderYield has a negative correlation of 0.6, this is unexpected since the score usually determines the risk factor which indirectly determines the rate of interest at which the loan is issued.
+
+
+```{r echo=FALSE}
+loan.status <- loan %>%
+  filter(LoanStatus %in% c("Completed", "Defaulted")) %>%
+  select(DebtToIncomeRatio, CreditScore, LoanStatus, 
+         LoanOriginationQuarter)
+
+ggplot(aes(x = DebtToIncomeRatio, y = CreditScore,
+           alpha = 0.05, color = LoanStatus),
+       data = loan.status) +
+  geom_point() +
+  coord_cartesian(ylim = c(400, 900)) +
+  scale_color_manual(values = c("#006633", "#FF0033"))
+```
+
+LenderYield w.r.t DebtIncomeRatio
+```{r echo=FALSE, Multivariate_Plots}
+ggplot(aes(x = DebtToIncomeRatio, y = LenderYield,
+           color = as.integer(CreditRating), group = CreditRating), 
+       data = loan) +
+  geom_jitter() +
+  xlim(0, quantile(loan$DebtToIncomeRatio, 0.995, na.rm = T)) +
+  scale_color_gradient2(high = "#FA4659", midpoint = 4, mid = "#FBB448",
+                       low = "#2EB872",
+                       breaks = seq(1, 7, 1),
+                       labels = category,
+                       limits = c(1, 7),
+                       name = 'Risk Category') +
+  theme(legend.position = "right", 
+        legend.direction = "vertical",
+        legend.key.size = unit(1, "cm"))
+```
+
+
+The above two plots of DebttoIncomeRatio vs. Credit Score and LederYield respectively. The first plot shows that there is overplotting near the lower end of DebttoIncomeRatio, the defaulters tend to have low credit score. There is a line of plots at the higher end of DebttoIncome ratio which are mostly the ones who have completely paid back their loans.
+The second plot with Lender Yield, also has overplotting at the lower end of Debt-Income ratio.  Most of the low risk prosper grades have a very low interest rate compared to the ones at higher risk.
+
+------
+
+#FINAL PLOTS AND ANALYSIS
+
+### Plot One : Time series Plots 
+
+Time series plot help us to better visualize the performance of Prosper, we can see the different trend lines, ups and downs of the company.I'm creating a separate dataset from our main dataframe Loan, with the Quarter variable and the original loan amount.
+
+```{r echo=FALSE }
+prosperOri <- loan %>% 
+  select(Quarter = LoanOriginationQuarter,
+         Amount = LoanOriginalAmount) %>%
+  group_by(Quarter) %>%
+  summarise(Loans = n() / 100,
+            Dollars = sum(Amount)) %>%
+  arrange(Quarter)
+
+```
+
+```{r echo=FALSE, fig5, fig.width=15, fig.height=8}
+ggplot(aes(x = Quarter, y = Loans), data = prosperOri) +
+  geom_bar(aes(color=prosperOri$Quarter, fill=prosperOri$Quarter),stat = "identity") +
+  geom_text(aes(label = round(Loans, 1)), vjust = -0.5, size = 5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(size = 12))+
+  ylab("Loans (Hundreds)")+
+  ggtitle("Loans per Quarter since the start of Prosper Marketplace")
+```
+
+### Loans per Quarter since the start of Prosper Marketplace
+
+We see that the quarter4 in the year 2008, the number of loans taken gradually decreases and there are no loans issued in Quarter 1 of the year 2009, Q2-2009 there are only 10 loans issued and then it slowly increases. This pitfall is because of the Great Depression of 2008. The last quarter of 2013, Propser issued the maximum number of loans of 144500, followed by the year 2014, we have only the first quarter information and during that time, it seems like Prosper issued 121700 loans. This plot allows us to see how Prosper was performing since it has started, though we have the information only until its first quarter of 2014
+
+
+### Plot 2
+
+```{r echo=FALSE, Plot_Two}
+qplot(x=ListingCategory, data=loan, color=loan$newStatus, fill=loan$newStatus)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ylab("Number of Borrowers")+
+  ggtitle("Status of the borrowers under each Category")
+```
+
+### Status of the borrowers under each Category
+
+I believe it doesn't give us enough details when using listing category variable for trend or relationship analysis and the category is probably better left ignored during those types of investigations. But one thing we can take away from the high volume of borrowers requesting debt consolidation loans, is that, many borrowers have current debt and ver few percent have defaulted and is by far the most frequent category.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+
+ggplot(aes(x = loan$CreditRating, y = loan$LoanOriginalAmount, color = loan$Term.f), data = loan) + 
+  geom_point(alpha=0.4,size = 2, position = 'jitter') +
+  scale_color_brewer(type = 'div',
+                     guide = guide_legend(title = 'Loan Term', reverse = T,
+                                          override.aes = list(alpha = 1, size = 2))) +  
+  ggtitle('Loan Amount under each risk category over the loan period')+
+  scale_x_discrete(limits = c("AA", "A", "B", "C","D","E","HR"))+ 
+  ylab("Loan Amount")+
+  xlab("Credit Rating")
+
+```
+
+### Loan Amount under each risk category over the loan period
+I believe from this plot, its clear that most of the low risk loans have been issued for longer period from 36 to 60 months. 
+The loans that were issued for a year or less is more in the higher risk borrowers.
+
+
+# Reflection
+
+In this analysis, my major hurdle was reading the entire csv due to its huge volume of 114k observations and 81 variables. My first thought to reduce the runtime was to subset the dataset, with my initial understanding of the variables from the Variable Description file, I started off with 15 variables. But as i progressed into my analysis, I realized that these 15 were not enough to get the results I was looking for. This re-iteration of going back to step 1 and re-selecting the variables went on for 3-4 times!Second biggest hurdle, was trying to figure out how to get the ratings for the loans issued before 2009.Since we had a good amount of data from 2007 quarter-1. I finally figured out a way to club the ProperRating..Alpha with the Credit Grade provided, to create a new column called Credit Rating.
+I also wanted to use the borrower state variable to generate a R-Map to see the  different counts of defaulters, loanStatus per state. But do to some discrepency with the Mappers library or due to my mistake, I was unable to do so!
+
+There are a number of different ways to take this project further. Firstly, I've focused only on a small subset of the variables available in the dataset, and there is a vast amount of data I'vent explored. I think if I better understood the finance/loan terms I would do better justice to this data analysis.I think I'd like to explore the investors side a bit more; look at investor profit and losses. Also, I would like to learn about the kind of plots and graphs specifically used by the finance industry, so that I can incorporate that knowledge into any future datasets I may explore, like using density line graphs showing spikes by time period.
