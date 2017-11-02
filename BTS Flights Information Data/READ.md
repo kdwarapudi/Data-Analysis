@@ -23,5 +23,7 @@ Based on my first feedback, I had made the following changes to my viz
 
 Initial: 
 https://public.tableau.com/profile/kousalya5632#!/vizhome/Udacity_P6/Analysis
+
+
 Post Feedback, Final:
 https://public.tableau.com/profile/kousalya5632#!/vizhome/Udacity_P6_Final/Analysis?publish=yes
